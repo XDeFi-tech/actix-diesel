@@ -6,7 +6,7 @@ This crate allows for a simple async interface to `diesel` powered by `actix`. I
 
 ## Usage
 
-See [the example](./example) for detailed usage information.
+See [the example](examples/web) for detailed usage information.
 
 ```rust
 async fn index(state: State<AppState>) -> Result<Json<User>> {

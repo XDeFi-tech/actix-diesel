@@ -2,7 +2,6 @@ use crate::{executor::Executor, Database};
 use actix::SyncArbiter;
 use diesel::{
     r2d2::{ConnectionManager, CustomizeConnection, Error as R2D2Error, Pool},
-    Connection,
 };
 use once_cell::sync::OnceCell;
 use std::{
@@ -11,22 +10,23 @@ use std::{
     sync::Arc,
     time::Duration,
 };
+use diesel::r2d2::R2D2Connection;
 
 pub struct Builder<C: 'static>
 where
-    C: Connection,
+    C: R2D2Connection,
 {
     pub(crate) phantom: PhantomData<C>,
     pub(crate) pool_max_size: Option<u32>,
     pub(crate) pool_min_idle: Option<Option<u32>>,
     pub(crate) pool_max_lifetime: Option<Option<Duration>>,
-    pub(crate) on_acquire: Option<Box<Fn(&mut C) -> Result<(), R2D2Error> + Send + Sync>>,
-    pub(crate) on_release: Option<Box<Fn(C) + Send + Sync>>,
+    pub(crate) on_acquire: Option<Box<dyn Fn(&mut C) -> Result<(), R2D2Error> + Send + Sync>>,
+    pub(crate) on_release: Option<Box<dyn Fn(C) + Send + Sync>>,
 }
 
 impl<C> Builder<C>
 where
-    C: Connection,
+    C: R2D2Connection,
 {
     #[inline]
     pub fn pool_max_size(&mut self, max_size: u32) -> &mut Self {
@@ -95,8 +95,8 @@ where
 }
 
 struct FnConnectionCustomizer<C: 'static> {
-    on_acquire: Option<Box<Fn(&mut C) -> Result<(), R2D2Error> + Send + Sync>>,
-    on_release: Option<Box<Fn(C) + Send + Sync>>,
+    on_acquire: Option<Box<dyn Fn(&mut C) -> Result<(), R2D2Error> + Send + Sync>>,
+    on_release: Option<Box<dyn Fn(C) + Send + Sync>>,
 }
 
 impl<C> Debug for FnConnectionCustomizer<C> {

@@ -5,137 +5,140 @@ use diesel::{
     result::{Error, OptionalExtension},
     Connection, RunQueryDsl,
 };
-use futures::Future;
+use diesel::r2d2::R2D2Connection;
+use futures::future::BoxFuture;
+
+type AsyncDslFuture<I> = BoxFuture<'static, Result<I, AsyncError<Error>>>;
 
 pub trait AsyncRunQueryDsl<Conn>: RunQueryDsl<Conn>
 where
-    Conn: Connection,
+    Conn: R2D2Connection,
 {
     fn execute_async(
         self,
         db: &Database<Conn>,
-    ) -> Box<Future<Item = usize, Error = AsyncError<Error>>>
+    ) -> AsyncDslFuture<usize>
     where
         Conn: Connection,
         Self: ExecuteDsl<Conn>;
 
-    fn load_async<U: 'static>(
+    fn load_async<'a, U: 'static>(
         self,
         db: &Database<Conn>,
-    ) -> Box<Future<Item = Vec<U>, Error = AsyncError<Error>>>
+    ) -> AsyncDslFuture<Vec<U>>
     where
         U: Send,
-        Self: LoadQuery<Conn, U>;
+        Self: LoadQuery<'a, Conn, U>;
 
-    fn get_result_async<U: 'static>(
+    fn get_result_async<'a, U: 'static>(
         self,
         db: &Database<Conn>,
-    ) -> Box<Future<Item = U, Error = AsyncError<Error>>>
+    ) -> AsyncDslFuture<U>
     where
         U: Send,
-        Self: LoadQuery<Conn, U>;
+        Self: LoadQuery<'a, Conn, U>;
 
-    fn get_optional_result_async<U: 'static>(
+    fn get_optional_result_async<'a, U: 'static>(
         self,
         db: &Database<Conn>,
-    ) -> Box<Future<Item = Option<U>, Error = AsyncError<Error>>>
+    ) -> AsyncDslFuture<Option<U>>
     where
         U: Send,
-        Self: LoadQuery<Conn, U>;
+        Self: LoadQuery<'a, Conn, U>;
 
-    fn get_results_async<U: 'static>(
+    fn get_results_async<'a, U: 'static>(
         self,
         db: &Database<Conn>,
-    ) -> Box<Future<Item = Vec<U>, Error = AsyncError<Error>>>
+    ) -> AsyncDslFuture<Vec<U>>
     where
         U: Send,
-        Self: LoadQuery<Conn, U>;
+        Self: LoadQuery<'a, Conn, U>;
 
-    fn first_async<U: 'static>(
+    fn first_async<'a, U: 'static>(
         self,
         db: &Database<Conn>,
-    ) -> Box<Future<Item = U, Error = AsyncError<Error>>>
+    ) ->  AsyncDslFuture<U>
     where
         U: Send,
         Self: LimitDsl,
-        Limit<Self>: LoadQuery<Conn, U>;
+        Limit<Self>: LoadQuery<'a, Conn, U>;
 }
 
 impl<T: 'static, Conn> AsyncRunQueryDsl<Conn> for T
 where
     T: RunQueryDsl<Conn> + Send,
-    Conn: Connection,
+    Conn: R2D2Connection,
 {
     #[inline]
     fn execute_async(
         self,
         db: &Database<Conn>,
-    ) -> Box<Future<Item = usize, Error = AsyncError<Error>>>
+    ) -> AsyncDslFuture<usize>
     where
         Conn: Connection,
         Self: ExecuteDsl<Conn>,
     {
-        Box::new(db.get(move |conn| self.execute(conn)))
+        Box::pin(db.get(move |conn| self.execute(conn)))
     }
 
     #[inline]
-    fn load_async<U: 'static>(
+    fn load_async<'a, U: 'static>(
         self,
         db: &Database<Conn>,
-    ) -> Box<Future<Item = Vec<U>, Error = AsyncError<Error>>>
+    ) -> AsyncDslFuture<Vec<U>>
     where
         U: Send,
-        Self: LoadQuery<Conn, U>,
+        Self: LoadQuery<'a, Conn, U>,
     {
-        Box::new(db.get(move |conn| self.load(conn)))
+        Box::pin(db.get(move |conn| self.load(conn)))
     }
 
     #[inline]
-    fn get_results_async<U: 'static>(
+    fn get_result_async<'a, U: 'static>(
         self,
         db: &Database<Conn>,
-    ) -> Box<Future<Item = Vec<U>, Error = AsyncError<Error>>>
+    ) -> AsyncDslFuture<U>
     where
         U: Send,
-        Self: LoadQuery<Conn, U>,
+        Self: LoadQuery<'a, Conn, U>,
     {
-        Box::new(db.get(move |conn| self.get_results(conn)))
+        Box::pin(db.get(move |conn| self.get_result(conn)))
     }
 
     #[inline]
-    fn get_result_async<U: 'static>(
+    fn get_optional_result_async<'a, U: 'static>(
         self,
         db: &Database<Conn>,
-    ) -> Box<Future<Item = U, Error = AsyncError<Error>>>
+    ) ->  AsyncDslFuture<Option<U>>
     where
         U: Send,
-        Self: LoadQuery<Conn, U>,
+        Self: LoadQuery<'a, Conn, U>,
     {
-        Box::new(db.get(move |conn| self.get_result(conn)))
+        Box::pin(db.get(move |conn| self.get_result(conn).optional()))
     }
 
     #[inline]
-    fn get_optional_result_async<U: 'static>(
+    fn get_results_async<'a, U: 'static>(
         self,
         db: &Database<Conn>,
-    ) -> Box<Future<Item = Option<U>, Error = AsyncError<Error>>>
+    ) -> AsyncDslFuture<Vec<U>>
     where
         U: Send,
-        Self: LoadQuery<Conn, U>,
+        Self: LoadQuery<'a, Conn, U>,
     {
-        Box::new(db.get(move |conn| self.get_result(conn).optional()))
+        Box::pin(db.get(move |conn| self.get_results(conn)))
     }
 
     #[inline]
-    fn first_async<U: 'static>(
+    fn first_async<'a, U: 'static>(
         self,
         db: &Database<Conn>,
-    ) -> Box<Future<Item = U, Error = AsyncError<Error>>>
+    ) -> AsyncDslFuture<U>
     where
         U: Send,
         Self: LimitDsl,
-        Limit<Self>: LoadQuery<Conn, U>,
+        Limit<Self>: LoadQuery<'a, Conn, U>,
     {
-        Box::new(db.get(move |conn| self.first(conn)))
+        Box::pin(db.get(move |conn| self.first(conn)))
     }
 }

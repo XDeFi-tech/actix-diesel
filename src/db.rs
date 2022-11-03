@@ -5,15 +5,15 @@ use crate::{
 use actix::Addr;
 use diesel::{
     r2d2::{ConnectionManager, Pool},
-    Connection,
 };
-use futures::Future;
+use futures::{Future, FutureExt};
 use once_cell::sync::OnceCell;
 use std::{fmt::Debug, marker::PhantomData, sync::Arc};
+use diesel::r2d2::R2D2Connection;
 
 pub struct Database<C: 'static>
 where
-    C: Connection,
+    C: R2D2Connection,
 {
     pub(crate) cell: Arc<OnceCell<Addr<Executor<C>>>>,
     pub(crate) pool: Pool<ConnectionManager<C>>,
@@ -22,12 +22,12 @@ where
 
 impl<C> Clone for Database<C>
 where
-    C: Connection,
+    C: R2D2Connection,
 {
     fn clone(&self) -> Self {
         Database {
             cell: self.cell.clone(),
-            init: self.init.clone(),
+            init: self.init,
             pool: self.pool.clone(),
         }
     }
@@ -35,7 +35,7 @@ where
 
 impl<C> Database<C>
 where
-    C: Connection,
+    C: R2D2Connection,
 {
     #[inline]
     pub fn open(url: impl Into<String>) -> Database<C> {
@@ -56,28 +56,28 @@ where
 
     /// Executes the given function inside a database transaction.
     #[inline]
-    pub fn transaction<F, R, E>(&self, f: F) -> impl Future<Item = R, Error = AsyncError<E>>
+    pub fn transaction<F, R, E>(&self, f: F) -> impl Future<Output=Result<R, AsyncError<E>>>
     where
         F: 'static + FnOnce(&C) -> Result<R, E> + Send,
         R: 'static + Send,
         E: 'static + From<diesel::result::Error> + Debug + Send + Sync,
     {
-        self.get(move |conn| conn.transaction(move || f(conn)))
+        self.get(move |conn| conn.transaction(move |conn| f(conn)))
     }
 
     /// Executes the given function with a connection retrieved from the pool.
     ///
     /// This is non-blocking and uses a `SyncArbiter` to provide a thread pool.
-    pub fn get<F, R, E>(&self, f: F) -> impl Future<Item = R, Error = AsyncError<E>>
+    pub fn get<F, R, E>(&self, f: F) -> impl Future<Output = Result<R, AsyncError<E>>>
     where
-        F: 'static + FnOnce(&C) -> Result<R, E> + Send,
+        F: 'static + FnOnce(&mut C) -> Result<R, E> + Send,
         R: 'static + Send,
         E: 'static + Debug + Send + Sync,
     {
         self.cell
             .get_or_init(|| (self.init)(self.pool.clone()))
             .send(Execute(f, PhantomData))
-            .then(|res| -> Result<R, AsyncError<E>> {
+            .then(|res| async move {
                 match res {
                     Ok(res) => match res {
                         Ok(res) => match res {
