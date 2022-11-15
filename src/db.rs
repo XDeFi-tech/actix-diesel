@@ -58,7 +58,7 @@ where
     #[inline]
     pub fn transaction<F, R, E>(&self, f: F) -> impl Future<Output=Result<R, AsyncError<E>>>
     where
-        F: 'static + FnOnce(&C) -> Result<R, E> + Send,
+        F: 'static + FnOnce(&mut C) -> Result<R, E> + Send,
         R: 'static + Send,
         E: 'static + From<diesel::result::Error> + Debug + Send + Sync,
     {
